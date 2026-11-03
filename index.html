@@ -608,7 +608,7 @@ document.addEventListener("visibilitychange",()=>{if(!Sync.cfg)return;if(documen
 
 function syncSheet(fromWelcome){const c=Sync.cfg||{};
   sheet(`<h3>${Sync.cfg?"المزامنة مع جيت هب":"ربط جيت هب"}</h3><p>بياناتك تُشفَّر داخل الجوال بكلمة مرورك، ثم تُحفظ في مستودع خاص. جيت هب لا يرى إلا ملفًا مشفرًا.</p>
-  ${c.owner?`<div class="meta">المستودع: ${esc(c.owner)}/${esc(c.repo)}</div>`:`<div class="meta">التطبيق يتعرف على حسابك من المفتاح، وينشئ مستودع البيانات الخاص إذا ما كان موجودًا.</div>`}
+  ${c.owner?`<div class="meta">المستودع: ${esc(c.owner)}/${esc(c.repo)}<br>المفتاح الحالي يبدأ بـ <span class="num">${esc((c.token||"").slice(0,6))}…</span></div>`:`<div class="meta">التطبيق يتعرف على حسابك من المفتاح، وينشئ مستودع البيانات الخاص إذا ما كان موجودًا.</div>`}
   ${fld("g_t","مفتاح الوصول","",{type:"password",ph:c.token?"اتركه فاضي للإبقاء على المفتاح الحالي":"يبدأ بـ ghp_",hint:"الصقه كما نسخته من جيت هب"})}
   ${fld("g_p","كلمة مرور التشفير",c.pass||"",{type:"password",hint:"تُحفظ في هذا الجوال. إذا نسيتها وضاع الجوال لا يمكن فتح البيانات"})}
   ${Sync.cfg?"":fld("g_p2","أعد كتابة كلمة مرور التشفير","",{type:"password"})}
@@ -624,6 +624,7 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
       try{const ur=await fetch("https://api.github.com/user",{headers:Sync.hdr(),cache:"no-store"});
         if(!ur.ok){Sync.cfg=old;err.textContent=ur.status===401?"المفتاح غير صحيح. انسخه من جيت هب مرة ثانية والصقه كاملًا (يبدأ بـ ghp_)":"تعذر التحقق من المفتاح (رمز "+ur.status+")";return}
         cfg.owner=(await ur.json()).login;
+        if(cfg.token.startsWith("github_pat_")){Sync.cfg=old;err.textContent="هذا المفتاح القديم (يبدأ بـ github_pat_) وما له صلاحيات. الصق المفتاح الجديد الذي يبدأ بـ ghp_";return}
         let rr=await fetch(`https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}`,{headers:Sync.hdr(),cache:"no-store"});
         if(rr.status===404){err.textContent="جاري إنشاء مستودع البيانات الخاص…";
           const cr=await fetch("https://api.github.com/user/repos",{method:"POST",headers:{...Sync.hdr(),"Content-Type":"application/json"},body:JSON.stringify({name:cfg.repo,private:true,auto_init:true,description:"بيانات ميزانيتي المشفرة"})});
