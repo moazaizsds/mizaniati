@@ -583,7 +583,7 @@ const Sync={cfg:null,sha:null,state:"off",t:null,busy:false,pending:false,
   set(st){this.state=st;const e=document.getElementById("syncst");if(e){e.textContent=Sync.label();e.dataset.st=st}},
   label(){return{off:"",idle:"متزامن مع جيت هب",saving:"جاري الحفظ في جيت هب…",offline:"بدون إنترنت، سيُحفظ لاحقًا",error:"تعذر الحفظ في جيت هب"+(this.code?" (رمز "+this.code+")":""),auth:"مفتاح جيت هب غير صالح أو منتهي",norepo:"المفتاح لا يملك صلاحية الكتابة على المستودع",pw:"كلمة مرور التشفير لا تطابق ملف جيت هب"}[this.state]||""},
   async get(){const r=await fetch(this.url()+"?t="+Date.now(),{headers:this.hdr(),cache:"no-store"});
-    if(r.status===404)return null;if(r.status===401||r.status===403){const e=new Error("auth");e.code="auth";throw e}if(!r.ok){const e=new Error("http");e.code="http";throw e}
+    this.code=r.status;if(r.status===404||r.status===409)return null;if(r.status===401||r.status===403){const e=new Error("auth");e.code="auth";throw e}if(!r.ok){const e=new Error("http");e.code="http";throw e}
     const j=await r.json();this.sha=j.sha;return atob(j.content.replace(/\n/g,""))},
   async put(text){const body={message:"تحديث "+new Date().toISOString().slice(0,16).replace("T"," "),content:btoa(text)};if(this.sha)body.sha=this.sha;
     const r=await fetch(this.url(),{method:"PUT",headers:{...this.hdr(),"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -641,7 +641,7 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
         if(fromWelcome||blank){r.querySelector("#g_mine").hidden=true;r.querySelector("#g_choice span").textContent="وجدت بياناتك المحفوظة في جيت هب لـ "+(remote.name||"")+"."}
         r.querySelector("#g_use").onclick=async()=>{await Sync.store();S=remote;save(true);Sync.set("idle");close();view="budget";render();toast("تم تحميل بياناتك")};
         r.querySelector("#g_mine").onclick=async()=>{await Sync.store();await Sync.push();close();render();toast("تم حفظ بيانات هذا الجوال")};
-      }catch(e){Sync.cfg=old;err.textContent=e.code==="auth"?"المفتاح غير صالح أو لا يملك صلاحية على هذا المستودع":e.code==="http"?"تأكد من اسم المستخدم والمستودع":"تعذر الاتصال، تأكد من الإنترنت"}};
+      }catch(e){Sync.cfg=old;err.textContent=e.code==="auth"?"المفتاح غير صالح أو لا يملك صلاحية على هذا المستودع":e.code==="http"?"جيت هب رد بخطأ (رمز "+Sync.code+"). جرّب مرة ثانية":"تعذر الاتصال، تأكد من الإنترنت"}};
     const n=r.querySelector("#g_now");if(n)n.onclick=async()=>{await Sync.pull();if(Sync.cfg.dirty)await Sync.push();close();render();toast(Sync.label())};
     const o=r.querySelector("#g_off");if(o)o.onclick=async()=>{if(!o.dataset.c){o.dataset.c=1;o.textContent="تأكيد؟ البيانات تبقى في الجوال وفي جيت هب";return}
       Sync.cfg=null;Sync.sha=null;Sync.state="off";await kvDel("sync:"+Session.name);close();render();toast("تم الفصل")}},!!fromWelcome&&!S)}
