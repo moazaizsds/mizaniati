@@ -624,7 +624,8 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
           await Sync.store();await Sync.push();close();render();toast("تم الربط وحفظ بياناتك");return}
         let remote;try{remote=await decrypt(txt,cfg.pass)}catch(e){err.textContent="كلمة مرور التشفير لا تفتح الملف الموجود في المستودع";Sync.cfg=old;return}
         err.textContent="";const ch=r.querySelector("#g_choice");ch.hidden=false;r.querySelector("#g_who").textContent=remote.name||"";r.querySelector("#g_s").hidden=true;
-        if(fromWelcome||!S)r.querySelector("#g_mine").hidden=true;
+        const blank=!S||(!S.log.length&&!S.loans.length&&S.items.every(i=>!toNum(i.amount)));
+        if(fromWelcome||blank){r.querySelector("#g_mine").hidden=true;r.querySelector("#g_choice span").textContent="وجدت بياناتك المحفوظة في جيت هب لـ "+(remote.name||"")+"."}
         r.querySelector("#g_use").onclick=async()=>{await Sync.store();S=remote;save(true);Sync.set("idle");close();view="budget";render();toast("تم تحميل بياناتك")};
         r.querySelector("#g_mine").onclick=async()=>{await Sync.store();await Sync.push();close();render();toast("تم حفظ بيانات هذا الجوال")};
       }catch(e){Sync.cfg=old;err.textContent=e.code==="auth"?"المفتاح غير صالح أو لا يملك صلاحية على هذا المستودع":e.code==="http"?"تأكد من اسم المستخدم والمستودع":"تعذر الاتصال، تأكد من الإنترنت"}};
@@ -724,14 +725,13 @@ function newUser(ps){sheet(`<h3>مستخدم جديد</h3>
   <div class="checks">${["محمد","هنو"].filter(n=>!ps.some(p=>p.name===n)).map(n=>`<button class="chip" data-n="${n}">${n}</button>`).join("")}</div>${fld("w_n","الاسم","")}
   ${fld("w_p","كلمة مرور الدخول","",{type:"password",hint:"تحمي بياناتك في هذا الجوال. لا يمكن استرجاعها إذا نسيتها"})}${fld("w_p2","أعد كتابتها","",{type:"password"})}
   ${fld("w_c","تاريخ بداية الدورة الحالية (يوم الراتب)",lastCycleStart(),{type:"date"})}<div class="err" id="w_err"></div>
-  <button class="primary" id="w_s">ابدأ من جديد</button><button class="ghost" id="w_g">بياناتي محفوظة في جيت هب</button><button class="ghost" id="w_r">عندي ملف نسخة احتياطية</button><button class="ghost" data-close>إلغاء</button>`,
+  <button class="primary" id="w_s">ابدأ</button><button class="ghost" data-close>إلغاء</button>`,
   (r,close)=>{r.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{r.querySelector("#w_n").value=b.dataset.n;r.querySelectorAll("[data-n]").forEach(x=>x.setAttribute("aria-pressed",x===b))});
     const err=r.querySelector("#w_err");
     const make=async()=>{const n=V(r,"w_n").trim(),p=V(r,"w_p");if(!n){err.textContent="اكتب الاسم";return false}if(p.length<4){err.textContent="كلمة المرور ٤ أحرف أو أرقام على الأقل";return false}if(p!==V(r,"w_p2")){err.textContent="كلمتا المرور غير متطابقتين";return false}
       try{await createProfile(n,p)}catch(e){err.textContent="هذا الاسم موجود، ادخل من شاشة الدخول";return false}S=fresh(n);S.cycleStart=V(r,"w_c")||lastCycleStart();S.open={income:true};save();return true};
     r.querySelector("#w_s").onclick=async()=>{if(await make()){close();enter()}};
-    r.querySelector("#w_r").onclick=async()=>{if(await make()){close();enter();restoreSheet()}};
-    r.querySelector("#w_g").onclick=async()=>{if(await make()){close();enter();syncSheet(true)}}})}
+})}
 
 function enter(){$("#tabs").hidden=false;view="budget";render();askPersist();if(Sync.cfg)Sync.pull()}
 let hiddenAt=0;document.addEventListener("visibilitychange",()=>{if(!Session.key)return;if(document.visibilityState==="hidden")hiddenAt=Date.now();else if(hiddenAt&&Date.now()-hiddenAt>5*60*1000){save(true);setTimeout(()=>location.reload(),300)}});
