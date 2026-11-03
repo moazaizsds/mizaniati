@@ -152,7 +152,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent);font-weight:600;backgro
 </head>
 <body>
 <div class="wrap" id="app"></div>
-<nav class="tabs" id="tabs">
+<nav class="tabs" id="tabs" hidden>
   <button data-v="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 10h18M8 15h4"/></svg>الميزانية</button>
   <button data-v="savings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V11M10 19V6M16 19v-5M21 19H3"/></svg>الادخار</button>
   <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.5"/></svg>النسخ والإعدادات</button>
@@ -186,9 +186,15 @@ const DBN="mizaniati",ST="kv";
 function idb(){return new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=()=>r.result.createObjectStore(ST);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 async function load(){try{const db=await idb();return await new Promise(res=>{const q=db.transaction(ST).objectStore(ST).get("state");q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null)})}catch(e){try{return JSON.parse(localStorage.getItem(DBN))}catch(_){return null}}}
 let saveT;
-function save(local){if(!local){S.updatedAt=Date.now();Sync.dirty()}clearTimeout(saveT);saveT=setTimeout(async()=>{try{const db=await idb();db.transaction(ST,"readwrite").objectStore(ST).put(JSON.parse(JSON.stringify(S)),"state")}catch(e){try{localStorage.setItem(DBN,JSON.stringify(S))}catch(_){}}},150)}
+function save(local){if(!local){S.updatedAt=Date.now();Sync.dirty()}clearTimeout(saveT);saveT=setTimeout(async()=>{if(!Session.key||!S)return;try{await kvSet("state:"+Session.name,await encK(S))}catch(e){}},150)}
 async function kvGet(k){try{const db=await idb();return await new Promise(res=>{const q=db.transaction(ST).objectStore(ST).get(k);q.onsuccess=()=>res(q.result??null);q.onerror=()=>res(null)})}catch(e){return null}}
 async function kvSet(k,v){try{const db=await idb();db.transaction(ST,"readwrite").objectStore(ST).put(v,k)}catch(e){}}
+async function kvDel(k){try{const db=await idb();db.transaction(ST,"readwrite").objectStore(ST).delete(k)}catch(e){}}
+const Session={name:null,key:null};
+async function deriveKey(pass,saltB64){const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pass),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",salt:ub64(saltB64),iterations:250000,hash:"SHA-256"},k,{name:"AES-GCM",length:256},false,["encrypt","decrypt"])}
+async function encK(obj,key){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv},key||Session.key,new TextEncoder().encode(JSON.stringify(obj)));return{iv:b64(iv),ct:b64(ct)}}
+async function decK(blob,key){const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:ub64(blob.iv)},key||Session.key,ub64(blob.ct));return JSON.parse(new TextDecoder().decode(pt))}
 async function askPersist(){try{if(navigator.storage&&navigator.storage.persist){const p=await navigator.storage.persisted();S.persisted=p||await navigator.storage.persist();save()}}catch(e){}}
 
 /* ================= model ================= */
@@ -419,7 +425,9 @@ function vSettings(){let h=topbar("النسخ والإعدادات")+backupBanne
   <div class="meta">التخزين الدائم: ${S.persisted?"مفعّل، الجوال لن يمسح البيانات تلقائيًا":"غير مؤكد. ثبّت التطبيق على الشاشة الرئيسية ثم افتحه من الأيقونة"}</div>
   <div class="meta">${Sync.cfg?"نسخة محلية في هذا الجوال ونسخة مشفرة في جيت هب. لو انمسح الجوال، اربط جيت هب من جديد وترجع بياناتك.":"البيانات محفوظة داخل هذا الجوال فقط. حذف أيقونة التطبيق أو مسح بيانات المتصفح يمسحها، والنسخة الاحتياطية أو جيت هب ترجعها."}</div></div>
   <div class="card"><div class="f"><label for="nm">الاسم</label><input id="nm" value="${esc(S.name)}"></div><button class="ghost" data-act="savename">حفظ الاسم</button></div>
-  <button class="danger" data-act="wipe">مسح كل البيانات من هذا الجوال</button>`;
+  <div class="card"><b style="font-family:var(--display);font-weight:500">الدخول</b><div class="meta">يُطلب اسم المستخدم وكلمة المرور عند كل فتح، وبعد ٥ دقائق خارج التطبيق. بياناتك محفوظة في الجوال مشفرة بكلمة مرورك.</div>
+  <button class="ghost" data-act="chpass">تغيير كلمة مرور الدخول</button><button class="ghost" data-act="lock">قفل التطبيق الآن</button></div>
+  <button class="danger" data-act="wipe">حذف ${esc(S.name)} من هذا الجوال</button>`;
   return h}
 
 /* ================= sheets (forms) ================= */
@@ -568,7 +576,8 @@ function newCycle(){const T=totals();const since=daysBetween(S.cycleStart,today(
 /* ================= GitHub sync (encrypted file in a private repo) ================= */
 const Sync={cfg:null,sha:null,state:"off",t:null,busy:false,pending:false,
   path:"mizaniati-data.json",
-  async init(){this.cfg=await kvGet("sync");this.state=this.cfg?"idle":"off";this.sha=this.cfg?.sha||null},
+  async init(){const b=await kvGet("sync:"+Session.name);this.cfg=null;if(b)try{this.cfg=await decK(b)}catch(e){}this.state=this.cfg?"idle":"off";this.sha=this.cfg?.sha||null},
+  async store(){if(this.cfg&&Session.key)await kvSet("sync:"+Session.name,await encK(this.cfg))},
   url(){const c=this.cfg;return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${this.path}`},
   hdr(){return{"Authorization":"Bearer "+this.cfg.token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}},
   set(st){this.state=st;const e=document.getElementById("syncst");if(e){e.textContent=Sync.label();e.dataset.st=st}},
@@ -581,10 +590,10 @@ const Sync={cfg:null,sha:null,state:"off",t:null,busy:false,pending:false,
     if(r.status===401||r.status===403){const e=new Error("auth");e.code="auth";throw e}
     if(r.status===409||r.status===422){await this.get().catch(()=>{});const e=new Error("conflict");e.code="conflict";throw e}
     if(!r.ok){const e=new Error("http");e.code="http";throw e}
-    const j=await r.json();this.sha=j.content.sha;this.cfg.sha=this.sha;kvSet("sync",this.cfg)},
-  dirty(){if(!this.cfg)return;this.cfg.dirty=true;kvSet("sync",this.cfg);clearTimeout(this.t);this.t=setTimeout(()=>this.push(),2500)},
+    const j=await r.json();this.sha=j.content.sha;this.cfg.sha=this.sha;this.store()},
+  dirty(){if(!this.cfg)return;this.cfg.dirty=true;this.store();clearTimeout(this.t);this.t=setTimeout(()=>this.push(),2500)},
   async push(retry){if(!this.cfg||!S)return;if(this.busy){this.pending=true;return}this.busy=true;this.set("saving");
-    try{await this.put(await encrypt(S,this.cfg.pass));this.cfg.dirty=false;kvSet("sync",this.cfg);this.set("idle")}
+    try{await this.put(await encrypt(S,this.cfg.pass));this.cfg.dirty=false;this.store();this.set("idle")}
     catch(e){if(e.code==="conflict"&&!retry){this.busy=false;return this.push(true)}this.set(e.code==="auth"?"auth":navigator.onLine===false||e instanceof TypeError?"offline":"error")}
     this.busy=false;if(this.pending){this.pending=false;this.push()}},
   async pull(){if(!this.cfg)return;try{const txt=await this.get();if(txt==null){this.dirty();return}
@@ -612,16 +621,16 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
       err.textContent="جاري الاتصال…";const old=Sync.cfg;Sync.cfg=cfg;Sync.sha=null;
       try{const txt=await Sync.get();
         if(txt==null){if(!S){err.textContent="المستودع فاضي. ابدأ من جديد ثم اربطه";Sync.cfg=old;return}
-          await kvSet("sync",cfg);await Sync.push();close();render();toast("تم الربط وحفظ بياناتك");return}
+          await Sync.store();await Sync.push();close();render();toast("تم الربط وحفظ بياناتك");return}
         let remote;try{remote=await decrypt(txt,cfg.pass)}catch(e){err.textContent="كلمة مرور التشفير لا تفتح الملف الموجود في المستودع";Sync.cfg=old;return}
         err.textContent="";const ch=r.querySelector("#g_choice");ch.hidden=false;r.querySelector("#g_who").textContent=remote.name||"";r.querySelector("#g_s").hidden=true;
         if(fromWelcome||!S)r.querySelector("#g_mine").hidden=true;
-        r.querySelector("#g_use").onclick=async()=>{await kvSet("sync",cfg);S=remote;save(true);Sync.set("idle");close();view="budget";render();toast("تم تحميل بياناتك")};
-        r.querySelector("#g_mine").onclick=async()=>{await kvSet("sync",cfg);await Sync.push();close();render();toast("تم حفظ بيانات هذا الجوال")};
+        r.querySelector("#g_use").onclick=async()=>{await Sync.store();S=remote;save(true);Sync.set("idle");close();view="budget";render();toast("تم تحميل بياناتك")};
+        r.querySelector("#g_mine").onclick=async()=>{await Sync.store();await Sync.push();close();render();toast("تم حفظ بيانات هذا الجوال")};
       }catch(e){Sync.cfg=old;err.textContent=e.code==="auth"?"المفتاح غير صالح أو لا يملك صلاحية على هذا المستودع":e.code==="http"?"تأكد من اسم المستخدم والمستودع":"تعذر الاتصال، تأكد من الإنترنت"}};
     const n=r.querySelector("#g_now");if(n)n.onclick=async()=>{await Sync.pull();if(Sync.cfg.dirty)await Sync.push();close();render();toast(Sync.label())};
     const o=r.querySelector("#g_off");if(o)o.onclick=async()=>{if(!o.dataset.c){o.dataset.c=1;o.textContent="تأكيد؟ البيانات تبقى في الجوال وفي جيت هب";return}
-      Sync.cfg=null;Sync.sha=null;Sync.state="off";try{const db=await idb();db.transaction(ST,"readwrite").objectStore(ST).delete("sync")}catch(e){}close();render();toast("تم الفصل")}},!!fromWelcome&&!S)}
+      Sync.cfg=null;Sync.sha=null;Sync.state="off";await kvDel("sync:"+Session.name);close();render();toast("تم الفصل")}},!!fromWelcome&&!S)}
 
 /* ================= backup (AES-GCM + PBKDF2) ================= */
 const b64=u=>{const a=new Uint8Array(u);let s="";for(let i=0;i<a.length;i+=8192)s+=String.fromCharCode.apply(null,a.subarray(i,i+8192));return btoa(s)};
@@ -671,22 +680,67 @@ document.addEventListener("click",e=>{const t=e.target.closest("[data-v],[data-a
     if(a==="newcycle")newCycle();if(a==="sync")syncSheet();if(a==="backup")backupSheet();if(a==="restore")restoreSheet();
     if(a==="addplace")editPlace();if(a==="addgoal")goalSheet();if(a==="addsched")schedSheet();if(a==="addloan")loanSheet();if(a==="xfer")xferSheet();
     if(a==="savename"){S.name=$("#nm").value.trim()||S.name;save();render();toast("تم")}
-    if(a==="wipe"){if(t.dataset.c){indexedDB.deleteDatabase(DBN);try{localStorage.removeItem(DBN)}catch(_){}location.reload()}else{t.dataset.c=1;t.textContent="متأكد؟ لا يمكن التراجع إلا من نسخة احتياطية"}}}
+    if(a==="lock"){location.reload()}
+    if(a==="chpass")chPass();
+    if(a==="wipe"){if(t.dataset.c){(async()=>{await kvDel("state:"+Session.name);await kvDel("sync:"+Session.name);const ps=(await kvGet("profiles")||[]).filter(p=>p.name!==Session.name);await kvSet("profiles",ps);location.reload()})()}else{t.dataset.c=1;t.textContent="متأكد؟ لا يمكن التراجع إلا من نسخة احتياطية"}}}
 });
 document.addEventListener("toggle",e=>{const d=e.target;if(d.matches&&d.matches("details.sec")){S.open=S.open||{};S.open[d.dataset.sec]=d.open;save()}},true);
 document.addEventListener("change",e=>{const i=e.target.closest("[data-spent]");if(!i)return;const it=S.items.find(x=>x.id===i.dataset.spent);it.spent=toNum(i.value);save();render()});
 
 /* ================= boot ================= */
-function welcome(){sheet(`<h3>أهلًا بك في ميزانيتي</h3><p>البيانات تُحفظ في هذا الجوال فقط. اختر اسمك للبدء، وتقدر تعدّل كل البنود بعدها.</p>
-  <div class="checks"><button class="chip" data-n="محمد">محمد</button><button class="chip" data-n="هنو">هنو</button></div>${fld("w_n","أو اكتب اسمك","")}
-  ${fld("w_c","تاريخ بداية الدورة الحالية (يوم الراتب)",lastCycleStart(),{type:"date"})}
-  <button class="primary" id="w_s">ابدأ</button><button class="ghost" id="w_g">بياناتي محفوظة في جيت هب</button><button class="ghost" id="w_r">عندي ملف نسخة احتياطية</button>`,
+function chPass(){sheet(`<h3>تغيير كلمة مرور الدخول</h3>${fld("c_o","كلمة المرور الحالية","",{type:"password"})}${fld("c_n","الجديدة","",{type:"password"})}${fld("c_n2","أعد كتابة الجديدة","",{type:"password"})}<div class="err" id="c_err"></div><button class="primary" id="c_s">حفظ</button><button class="ghost" data-close>إلغاء</button>`,
+  (r,close)=>{r.querySelector("#c_s").onclick=async()=>{const err=r.querySelector("#c_err");const ps=await kvGet("profiles")||[];const pr=ps.find(p=>p.name===Session.name);
+    try{const k=await deriveKey(V(r,"c_o"),pr.salt);await decK(await kvGet("state:"+Session.name),k)}catch(e){err.textContent="كلمة المرور الحالية غير صحيحة";return}
+    const n=V(r,"c_n");if(n.length<4){err.textContent="٤ أحرف أو أرقام على الأقل";return}if(n!==V(r,"c_n2")){err.textContent="غير متطابقتين";return}
+    pr.salt=b64(crypto.getRandomValues(new Uint8Array(16)));Session.key=await deriveKey(n,pr.salt);await kvSet("profiles",ps);await kvSet("state:"+Session.name,await encK(S));await Sync.store();close();toast("تم تغيير كلمة المرور")}})}
+
+async function startSession(name,key){Session.name=name;Session.key=key;await Sync.init();
+  const b=await kvGet("state:"+name);S=b?await decK(b):null;return S}
+async function createProfile(name,pass){const ps=await kvGet("profiles")||[];if(ps.some(p=>p.name===name))throw new Error("exists");
+  const salt=b64(crypto.getRandomValues(new Uint8Array(16)));ps.push({name,salt});await kvSet("profiles",ps);
+  Session.name=name;Session.key=await deriveKey(pass,salt);await Sync.init();}
+
+function loginScreen(ps,legacy){$("#app").innerHTML=`<div style="min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:14px">
+  <div style="display:flex;gap:12px;align-items:center"><img src="icon-192.png" alt="" width="56" height="56" style="border-radius:14px"><div><h1 style="font-family:var(--display);margin:0;font-size:1.5rem">ميزانيتي</h1><div class="cyc">سجّل دخولك</div></div></div>
+  ${legacy?`<div class="banner info"><span>لحماية بياناتك، اختر كلمة مرور للدخول من الآن.</span></div>`:""}
+  <div class="card" ${!ps.length&&!legacy?"hidden":""}>${ps.length?`<div class="f"><label>المستخدم</label><div class="checks" id="l_users">${ps.map((p,i)=>`<button class="chip" data-u="${esc(p.name)}" aria-pressed="${i===0}">${esc(p.name)}</button>`).join("")}</div></div>`:""}
+  ${legacy?fld("l_p","كلمة مرور جديدة","",{type:"password"})+fld("l_p2","أعد كتابتها","",{type:"password"}):fld("l_p","كلمة المرور","",{type:"password"})}
+  <div class="err" id="l_err"></div><button class="primary" id="l_go">دخول</button></div>
+  ${legacy?"":`<button class="ghost" id="l_new">مستخدم جديد</button>${ps.length?`<button class="ghost" id="l_forgot" style="border:0;background:none;color:var(--muted);font-size:.85rem">نسيت كلمة المرور</button>`:""}`}</div>`;
+  let sel=ps[0]?.name;document.querySelectorAll("[data-u]").forEach(b=>b.onclick=()=>{sel=b.dataset.u;document.querySelectorAll("[data-u]").forEach(x=>x.setAttribute("aria-pressed",x===b));$("#l_p").focus()});
+  const err=$("#l_err"),go=$("#l_go");$("#l_p").addEventListener("keydown",e=>{if(e.key==="Enter")go.click()});
+  go.onclick=async()=>{const pass=$("#l_p").value;if(!pass){err.textContent="اكتب كلمة المرور";return}go.disabled=true;err.textContent="";
+    try{if(legacy){if(pass.length<4)throw{m:"٤ أحرف أو أرقام على الأقل"};if(pass!==$("#l_p2").value)throw{m:"كلمتا المرور غير متطابقتين"};
+        await createProfile(legacy.st.name||"أنا",pass);S=legacy.st;if(legacy.sync){Sync.cfg=legacy.sync;Sync.sha=legacy.sync.sha||null;Sync.state="idle";await Sync.store()}
+        await kvSet("state:"+Session.name,await encK(S));await kvDel("state");await kvDel("sync");try{localStorage.removeItem(DBN)}catch(_){}}
+      else{const pr=ps.find(p=>p.name===sel);const key=await deriveKey(pass,pr.salt);try{await startSession(pr.name,key)}catch(e){throw{m:"كلمة المرور غير صحيحة"}}
+        if(!S){S=fresh(pr.name);S.open={income:true};save()}}
+      enter()}catch(e){err.textContent=e.m||"تعذر الدخول";go.disabled=false}};
+  const nw=$("#l_new");if(nw)nw.onclick=()=>newUser(ps);
+  const fg=$("#l_forgot");if(fg)fg.onclick=()=>sheet(`<h3>نسيت كلمة المرور</h3><p>كلمة المرور تشفّر بياناتك في الجوال، فلا يمكن استرجاعها. الحل: تحذف المستخدم من هذا الجوال ثم تنشئه من جديد وترجع بياناتك من جيت هب أو من ملف النسخة الاحتياطية.</p><button class="danger" id="f_d">حذف ${esc(sel)} من هذا الجوال</button><button class="ghost" data-close>إلغاء</button>`,
+    (r,close)=>{const d=r.querySelector("#f_d");d.onclick=async()=>{if(!d.dataset.c){d.dataset.c=1;d.textContent="تأكيد الحذف";return}await kvDel("state:"+sel);await kvDel("sync:"+sel);await kvSet("profiles",ps.filter(p=>p.name!==sel));location.reload()}})}
+
+function newUser(ps){sheet(`<h3>مستخدم جديد</h3>
+  <div class="checks">${["محمد","هنو"].filter(n=>!ps.some(p=>p.name===n)).map(n=>`<button class="chip" data-n="${n}">${n}</button>`).join("")}</div>${fld("w_n","الاسم","")}
+  ${fld("w_p","كلمة مرور الدخول","",{type:"password",hint:"تحمي بياناتك في هذا الجوال. لا يمكن استرجاعها إذا نسيتها"})}${fld("w_p2","أعد كتابتها","",{type:"password"})}
+  ${fld("w_c","تاريخ بداية الدورة الحالية (يوم الراتب)",lastCycleStart(),{type:"date"})}<div class="err" id="w_err"></div>
+  <button class="primary" id="w_s">ابدأ من جديد</button><button class="ghost" id="w_g">بياناتي محفوظة في جيت هب</button><button class="ghost" id="w_r">عندي ملف نسخة احتياطية</button><button class="ghost" data-close>إلغاء</button>`,
   (r,close)=>{r.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{r.querySelector("#w_n").value=b.dataset.n;r.querySelectorAll("[data-n]").forEach(x=>x.setAttribute("aria-pressed",x===b))});
-    r.querySelector("#w_s").onclick=()=>{const n=V(r,"w_n").trim()||"أنا";S=fresh(n);S.cycleStart=V(r,"w_c")||lastCycleStart();S.open={income:true};save();askPersist();close();render()};
-    r.querySelector("#w_r").onclick=()=>{S=fresh("أنا");close();render();restoreSheet()};
-    r.querySelector("#w_g").onclick=()=>{close();syncSheet(true);const sc=document.querySelectorAll(".scrim");const last=sc[sc.length-1];last.querySelector("[data-close]").onclick=()=>{last.remove();welcome()}}},true)}
-(async()=>{await Sync.init();const st=await load();if(st&&st.items){S=st;render();askPersist();if(Sync.cfg)Sync.pull()}else{$("#app").innerHTML="";welcome()}
-  if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{})})();
+    const err=r.querySelector("#w_err");
+    const make=async()=>{const n=V(r,"w_n").trim(),p=V(r,"w_p");if(!n){err.textContent="اكتب الاسم";return false}if(p.length<4){err.textContent="كلمة المرور ٤ أحرف أو أرقام على الأقل";return false}if(p!==V(r,"w_p2")){err.textContent="كلمتا المرور غير متطابقتين";return false}
+      try{await createProfile(n,p)}catch(e){err.textContent="هذا الاسم موجود، ادخل من شاشة الدخول";return false}S=fresh(n);S.cycleStart=V(r,"w_c")||lastCycleStart();S.open={income:true};save();return true};
+    r.querySelector("#w_s").onclick=async()=>{if(await make()){close();enter()}};
+    r.querySelector("#w_r").onclick=async()=>{if(await make()){close();enter();restoreSheet()}};
+    r.querySelector("#w_g").onclick=async()=>{if(await make()){close();enter();syncSheet(true)}}})}
+
+function enter(){$("#tabs").hidden=false;view="budget";render();askPersist();if(Sync.cfg)Sync.pull()}
+let hiddenAt=0;document.addEventListener("visibilitychange",()=>{if(!Session.key)return;if(document.visibilityState==="hidden")hiddenAt=Date.now();else if(hiddenAt&&Date.now()-hiddenAt>5*60*1000){save(true);setTimeout(()=>location.reload(),300)}});
+
+(async()=>{if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+  const ps=await kvGet("profiles")||[];const legacyState=await load();
+  if(legacyState&&legacyState.items&&!ps.some(p=>p.name===legacyState.name)){loginScreen([],{st:legacyState,sync:await kvGet("sync")});return}
+  if(!ps.length){loginScreen([]);newUser([]);return}
+  loginScreen(ps)})();
 </script>
 </body>
 </html>
