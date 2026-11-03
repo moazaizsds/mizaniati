@@ -608,8 +608,8 @@ document.addEventListener("visibilitychange",()=>{if(!Sync.cfg)return;if(documen
 
 function syncSheet(fromWelcome){const c=Sync.cfg||{};
   sheet(`<h3>${Sync.cfg?"المزامنة مع جيت هب":"ربط جيت هب"}</h3><p>بياناتك تُشفَّر داخل الجوال بكلمة مرورك، ثم تُحفظ في مستودع خاص. جيت هب لا يرى إلا ملفًا مشفرًا.</p>
-  ${fld("g_o","اسم المستخدم في جيت هب",c.owner||"",{ph:"username"})}${fld("g_r","اسم المستودع الخاص",c.repo||"mizaniati-data")}
-  ${fld("g_t","مفتاح الوصول",c.token||"",{type:"password",hint:"صلاحية: هذا المستودع فقط، قراءة وكتابة الملفات"})}
+  <details ${c.owner&&c.owner!=="moazaizsds"?"open":""}><summary class="meta" style="cursor:pointer">المستودع: ${esc(c.owner||"moazaizsds")}/${esc(c.repo||"mizaniati-data")} (تغيير)</summary>${fld("g_o","اسم المستخدم في جيت هب",c.owner||"moazaizsds")}${fld("g_r","اسم المستودع الخاص",c.repo||"mizaniati-data")}</details>
+  ${fld("g_t","مفتاح الوصول",c.token||"",{type:"password",hint:"الصقه كما نسخته من جيت هب"})}
   ${fld("g_p","كلمة مرور التشفير",c.pass||"",{type:"password",hint:"تُحفظ في هذا الجوال. إذا نسيتها وضاع الجوال لا يمكن فتح البيانات"})}
   ${Sync.cfg?"":fld("g_p2","أعد كتابة كلمة مرور التشفير","",{type:"password"})}
   <div class="err" id="g_err"></div><div id="g_choice" hidden class="result"><span>فيه بيانات محفوظة في جيت هب لـ <b id="g_who" style="font-size:1rem"></b>. أي نسخة تستخدم؟</span>
