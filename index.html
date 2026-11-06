@@ -576,9 +576,10 @@ function newCycle(){const T=totals();const since=daysBetween(S.cycleStart,today(
 /* ================= GitHub sync (encrypted file in a private repo) ================= */
 const Sync={cfg:null,sha:null,state:"off",t:null,busy:false,pending:false,
   path:"mizaniati-data.json",
-  async init(){const b=await kvGet("sync:"+Session.name);this.cfg=null;if(b)try{this.cfg=await decK(b)}catch(e){}this.state=this.cfg?"idle":"off";this.sha=this.cfg?.sha||null},
+  async init(){const b=await kvGet("sync:"+Session.name);this.cfg=null;if(b)try{this.cfg=await decK(b)}catch(e){}if(this.cfg&&!this.cfg.path){this.cfg.path=this.path;this.store()}this.state=this.cfg?"idle":"off";this.sha=this.cfg?.sha||null},
+  userPath(){return "mizaniati-"+Session.name+".json"},
   async store(){if(this.cfg&&Session.key)await kvSet("sync:"+Session.name,await encK(this.cfg))},
-  url(){const c=this.cfg;return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${this.path}`},
+  url(){const c=this.cfg;return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${encodeURIComponent(c.path||this.path)}`},
   hdr(){return{"Authorization":"Bearer "+this.cfg.token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}},
   set(st){this.state=st;const e=document.getElementById("syncst");if(e){e.textContent=Sync.label();e.dataset.st=st}},
   label(){return{off:"",idle:"متزامن مع جيت هب",saving:"جاري الحفظ في جيت هب…",offline:"بدون إنترنت، سيُحفظ لاحقًا",error:"تعذر الحفظ في جيت هب"+(this.code?" (رمز "+this.code+")":""),auth:"مفتاح جيت هب غير صالح أو منتهي",norepo:"المفتاح لا يملك صلاحية الكتابة على المستودع",pw:"كلمة مرور التشفير لا تطابق ملف جيت هب"}[this.state]||""},
@@ -632,7 +633,10 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
           rr=await fetch(`https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}`,{headers:Sync.hdr(),cache:"no-store"})}
         if(!rr.ok){Sync.cfg=old;err.textContent="ما وصلت للمستودع "+cfg.owner+"/"+cfg.repo+" (رمز "+rr.status+")";return}
         const rj=await rr.json();if(rj.permissions&&rj.permissions.push===false){Sync.cfg=old;err.textContent="المفتاح للقراءة فقط. اجعل صلاحية Contents: Read and write";return}
-        const txt=await Sync.get();
+        cfg.path=Sync.userPath();let txt=await Sync.get();
+        if(txt==null){cfg.path=Sync.path;Sync.sha=null;const lt=await Sync.get();let mine=false;
+          if(lt!=null){try{const lo=await decrypt(lt,cfg.pass);mine=lo.name===Session.name}catch(e){}}
+          if(mine)txt=lt;else{cfg.path=Sync.userPath();Sync.sha=null}}
         if(txt==null){if(!S){err.textContent="المستودع فاضي. ابدأ من جديد ثم اربطه";Sync.cfg=old;return}
           await Sync.store();await Sync.push();if(Sync.state!=="idle"){err.textContent=Sync.label();return}close();render();toast("تم الربط وحفظ بياناتك");return}
         let remote;try{remote=await decrypt(txt,cfg.pass)}catch(e){err.textContent="كلمة مرور التشفير لا تفتح الملف الموجود في المستودع";Sync.cfg=old;return}
