@@ -640,6 +640,7 @@ function syncSheet(fromWelcome){const c=Sync.cfg||{};
         if(txt==null){if(!S){err.textContent="المستودع فاضي. ابدأ من جديد ثم اربطه";Sync.cfg=old;return}
           await Sync.store();await Sync.push();if(Sync.state!=="idle"){err.textContent=Sync.label();return}close();render();toast("تم الربط وحفظ بياناتك");return}
         let remote;try{remote=await decrypt(txt,cfg.pass)}catch(e){err.textContent="كلمة مرور التشفير لا تفتح الملف الموجود في المستودع";Sync.cfg=old;return}
+        if(remote.name&&remote.name!==Session.name){Sync.cfg=old;err.textContent="الملف الموجود يخص "+remote.name+"، وأنت داخل باسم "+Session.name+". ما راح أستخدمه";return}
         err.textContent="";const ch=r.querySelector("#g_choice");ch.hidden=false;r.querySelector("#g_who").textContent=remote.name||"";r.querySelector("#g_s").hidden=true;
         const blank=!S||(!S.log.length&&!S.loans.length&&S.items.every(i=>!toNum(i.amount)));
         if(fromWelcome||blank){r.querySelector("#g_mine").hidden=true;r.querySelector("#g_choice span").textContent="وجدت بياناتك المحفوظة في جيت هب لـ "+(remote.name||"")+"."}
